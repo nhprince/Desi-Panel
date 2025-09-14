@@ -1,0 +1,115 @@
+Desi Panel - Development Notes
+
+Updated: 2025-09-12 02:00 (+06)
+
+Summary of what is DONE
+- Monorepo scaffolded
+  - backend/ (Node.js + Express + Sequelize) with security middleware (helmet, CORS, rate limiting) and .env example
+  - frontend/ (React + Vite + Tailwind + Zustand + React Router) with auth-protected routes
+  - docs/ (CONTEXT.md), docker-compose.yml (Postgres), install.sh (Linux prod installer)
+- Backend: Phase 1 complete
+  - Auth: POST /api/auth/register, POST /api/auth/login (JWT)
+  - Account: GET /api/account/details, PUT /api/account/profile (requires current password)
+  - Models: User, HostingAccount, Domain
+  - DB config: PostgreSQL by DATABASE_URL, plus fast dev fallback to SQLite via USE_SQLITE=1
+- Frontend: Phase 1 UI
+  - Pages: Login, Register, Dashboard (protected)
+  - State: Zustand with token persistence
+- Backend: Phase 2 basics complete
+  - File Manager (sandboxed per user under FILES_ROOT/users/<userId>)
+    - GET /api/files/ (root) and GET /api/files/:path* (list)
+    - POST /api/files/upload?dir= (single file upload, multer memory storage)
+    - POST /api/files/mkdir?dir= (create folder)
+    - DELETE /api/files/:path* (delete file or directory)
+  - Domains
+    - GET /api/domains/
+    - POST /api/domains/ { name, type: addon|subdomain|parked }
+    - DELETE /api/domains/:id
+  - FTP Accounts (system ops stubbed for dev)
+    - GET /api/ftp/
+    - POST /api/ftp/ { username, password, homeDir? }
+    - PATCH /api/ftp/:id/status { status: active|disabled }
+    - POST /api/ftp/:id/reset-password { password }
+    - DELETE /api/ftp/:id
+  - SSL (self-signed for dev)
+    - GET /api/ssl/domains (domains + current certificate status)
+    - POST /api/ssl/issue { domainId }
+    - POST /api/ssl/:id/revoke
+    - DELETE /api/ssl/:id
+- Frontend: Phase 2 UI
+  - File Manager page: browse, create folder, upload, delete
+  - Domains page: list/create/delete
+  - FTP page: list/create/enable-disable/reset password/delete
+  - SSL page: list domains, issue/revoke/delete self-signed certs
+  - Navbar links for Dashboard, Files, Domains, FTP, SSL (visible when logged in)
+- Dev quality-of-life
+  - Fast dev without Docker/Postgres using SQLite (backend/.env USE_SQLITE=1)
+  - Admin seeding via backend/.env (ADMIN_EMAIL/ADMIN_PASSWORD)
+  - CORS defaults to http://localhost:5173 in dev
+  - .gitignore updated for local data (backend/data, storage)
+
+How to RUN (Dev, fastest path)
+1) Backend
+   - Ensure backend/.env exists (copied from backend/.env.example)
+     Important env for dev:
+       USE_SQLITE=1
+       JWT_SECRET=<any strong string>
+       FRONTEND_ORIGIN=http://localhost:5173
+       FILES_ROOT=./storage
+       ADMIN_EMAIL=admin@example.com
+       ADMIN_PASSWORD=ChangeMe123!
+   - Start: npm run dev --prefix backend
+   - API: http://localhost:4000
+2) Frontend
+   - Ensure frontend/.env exists (copied from frontend/.env.example)
+   - Start: npm run dev --prefix frontend
+   - App: http://localhost:5173
+3) Login
+   - admin@example.com / ChangeMe123! (or register a new user)
+
+Switch to Postgres (optional)
+- Start Postgres (docker compose up -d db) or use your own
+- In backend/.env, set:
+  USE_SQLITE=0  (or remove)
+  DATABASE_URL=postgres://user:pass@localhost:5432/desipanel
+- Restart backend
+
+Known Limitations / Tech Debt
+- Multer 1.x has advisories; plan to upgrade to multer 2.x soon
+- Auto-migrations via sequelize.sync({ alter }) in dev only; add proper migrations for prod
+- SSL uses self-signed certs only in dev; integrate Let’s Encrypt/ACME for prod
+- FTP uses stubbed system ops; integrate with Linux users and vsftpd for prod
+- No refresh token flow; consider refresh/rotation and logout everywhere
+- Error handling/UI toasts are minimal; improve UX (loading states, toasts)
+- File Manager lacks rename/move/copy/download/edit
+
+Next Up (Proposed Priorities)
+1) Phase 3: Database provisioning (MySQL/MariaDB)
+   - Backend
+     - Service layer: provision MySQL/MariaDB databases and users (dev stubs + prod path)
+     - Endpoints: list/create/delete DBs; create/reset DB user passwords
+     - Security: sandbox per hosting account
+   - Frontend
+     - DB page: list DBs/users, create/delete, reset passwords
+2) Phase 3: Email accounts & forwarders
+   - Backend: model/endpoints for email accounts, forwarders, spam controls (stub in dev)
+   - Frontend: Email page for CRUD
+3) Production SSL (Let’s Encrypt)
+   - ACME client integration (issue/renew/revoke), HTTP-01 challenges via webroot
+   - Persist certs securely on disk; bind to domains
+4) FTP system integration (Linux)
+   - Replace stubs with real user management (useradd/chroot), vsftpd config templates
+5) File Manager enhancements
+   - Rename/move/copy/download, file editor, drag-and-drop UI improvements
+6) Monitoring & Tools (Phase 4)
+   - Bandwidth/resource usage metrics, PHP version selector, cron scheduler, backup/restore
+7) DevOps & Quality
+   - Add ESLint/Prettier, testing (Jest + supertest), CI workflow, Sequelize migrations
+   - Harden input validation and audit logging
+
+Resume Checklist (when back)
+- Start backend: npm run dev --prefix backend
+- Start frontend: npm run dev --prefix frontend
+- Login and test:
+  - Dashboard -> Files -> Domains -> FTP -> SSL
+- Pick the next module (recommended: Database provisioning), then follow the Next Up plan above
