@@ -1,7 +1,20 @@
 @echo off
 SETLOCAL EnableDelayedExpansion
 
-:: --- ASCII Logo ---
+:: --- Helper Functions ---
+:print_error
+    echo.
+    powershell.exe -Command "Write-Host('[ERROR] %~1', [System.ConsoleColor]::Red)"
+    echo.
+    goto :eof
+
+:print_success
+    echo.
+    powershell.exe -Command "Write-Host('%~1', [System.ConsoleColor]::Green)"
+    echo.
+    goto :eof
+
+:: --- ASCII Logo & Welcome ---
 echo.
 echo   ██████╗ ███████╗███████╗██╗     
 echo   ██╔═══██╗██╔════╝██╔════╝██║     
@@ -17,33 +30,26 @@ echo     ██║     ██║  ██║██║ ╚████║███
 echo     ╚═╝     ╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝
 echo.
 echo Welcome to the Desi Panel Installer for Windows
-echo This script will help you configure your local development environment.
+echo This script will configure, install, and set up your application.
 echo.
 
 :: --- Prerequisite Check ---
 echo Checking prerequisites...
-where npm >nul 2>nul
-if %errorlevel% neq 0 (
-    echo Error: npm is not found. Please install Node.js and npm, then re-run the script.
-    goto :eof
-)
-where git >nul 2>nul
-if %errorlevel% neq 0 (
-    echo Error: git is not found. Please install Git, then re-run the script.
-    goto :eof
-)
+where npm >nul 2>nul || ( call :print_error "npm is not found. Please install Node.js and npm, then re-run the script." && exit /b )
+where git >nul 2>nul || ( call :print_error "git is not found. Please install Git, then re-run the script." && exit /b )
 echo Prerequisites met.
 echo.
 
 
-:: --- Database Configuration ---
-echo --- Database Configuration ---
+:: --- Configuration ---
+
 :db_choice
+echo --- Database Configuration ---
 set /p USE_SQLITE="For easy local testing, do you want to use SQLite? (Y/n): "
 if /i "%USE_SQLITE%"=="Y" goto :sqlite_setup
 if /i "%USE_SQLITE%"=="" goto :sqlite_setup
 if /i "%USE_SQLITE%"=="n" goto :postgres_setup
-echo Invalid choice. Please enter 'Y' or 'n'.
+call :print_error "Invalid choice. Please enter 'Y' or 'n'."
 goto :db_choice
 
 :sqlite_setup
@@ -52,137 +58,102 @@ goto :security_setup
 
 :postgres_setup
 :db_url_loop
-set /p DATABASE_URL="Enter the PostgreSQL URL (e.g., postgres://user:pass@localhost:5432/desipanel): "
-if defined DATABASE_URL (
-    set DB_CONFIG_LINE=DATABASE_URL=!DATABASE_URL!
-    goto :security_setup
-) else (
-    echo Database URL cannot be empty.
-    goto :db_url_loop
-)
-
+set /p DATABASE_URL="Enter the PostgreSQL URL: "
+if not defined DATABASE_URL ( call :print_error "Database URL cannot be empty." && goto :db_url_loop )
+set DB_CONFIG_LINE=DATABASE_URL=!DATABASE_URL!
 
 :security_setup
-:: --- Security Configuration ---
 echo.
-echo --- Security Configuration ---
+echo --- Security & Admin Credentials ---
 :jwt_loop
-set /p JWT_SECRET="Enter a strong, random JWT Secret (at least 16 characters): "
-if not defined JWT_SECRET (
-    echo JWT Secret cannot be empty.
-    goto :jwt_loop
-)
+set /p JWT_SECRET="Enter a strong JWT Secret (at least 16 characters): "
 set str=!JWT_SECRET!
 set /a len=0
 :len_loop
-if defined str ( 
-    set str=!str:~1!
-    set /a len+=1
-    goto :len_loop
-)
-if !len! lss 16 (
-    echo JWT Secret must be at least 16 characters long for security.
-    goto :jwt_loop
-)
+if defined str (set str=!str:~1! && set /a len+=1 && goto :len_loop)
+if !len! lss 16 ( call :print_error "JWT Secret must be at least 16 characters long." && goto :jwt_loop )
 
-:: --- Control Panel Admin Credentials ---
-echo.
-echo --- Control Panel Admin Credentials ---
-echo Set the initial login for the Desi Panel web interface.
 :email_loop
 set /p ADMIN_EMAIL="Admin Email: "
-if not defined ADMIN_EMAIL (  rem Basic check, can't do regex easily in batch
-    echo Email cannot be empty.
-    goto :email_loop
-)
+if not defined ADMIN_EMAIL ( call :print_error "Email cannot be empty." && goto :email_loop )
 
 :password_loop
-set /p ADMIN_PASSWORD="Admin Password (min 8 characters, will be visible): "
-if not defined ADMIN_PASSWORD (
-    echo Password cannot be empty.
-    goto :password_loop
-)
+echo (Note: Your password will be visible as you type.)
+set /p ADMIN_PASSWORD="Admin Password (min 8 characters): "
 set str=!ADMIN_PASSWORD!
 set /a len=0
 :len_loop_pass
-if defined str ( 
-    set str=!str:~1!
-    set /a len+=1
-    goto :len_loop_pass
-)
-if !len! lss 8 (
-    echo Password must be at least 8 characters long.
-    goto :password_loop
-)
-
+if defined str (set str=!str:~1! && set /a len+=1 && goto :len_loop_pass)
+if !len! lss 8 ( call :print_error "Password must be at least 8 characters long." && goto :password_loop )
 
 :: --- Application Settings ---
 echo.
 echo --- Application Settings ---
 set FRONTEND_ORIGIN_DEFAULT=http://localhost:5173
 set FILES_ROOT_DEFAULT=%CD%\storage
-
-set /p FRONTEND_ORIGIN="Enter the Frontend Origin URL [%FRONTEND_ORIGIN_DEFAULT%]: "
+set /p FRONTEND_ORIGIN="Frontend Origin URL [%FRONTEND_ORIGIN_DEFAULT%]: "
 if not defined FRONTEND_ORIGIN set FRONTEND_ORIGIN=%FRONTEND_ORIGIN_DEFAULT%
-
-set /p FILES_ROOT="Enter the root directory for user files [%FILES_ROOT_DEFAULT%]: "
+set /p FILES_ROOT="Root directory for user files [%FILES_ROOT_DEFAULT%]: "
 if not defined FILES_ROOT set FILES_ROOT=%FILES_ROOT_DEFAULT%
 
-
-
-:: --- Create Environment File ---
-set ENV_FILE=backend\.env
+:: --- File Creation ---
 echo.
-echo Creating environment file at %ENV_FILE%...
+echo Creating environment files...
 if not exist backend mkdir backend
-
-(
-    echo # Backend Server Configuration
-    echo PORT=4000
-    echo NODE_ENV=development
-    echo.
-    echo # Database
-    echo !DB_CONFIG_LINE!
-    echo.
-    echo # Security
-    echo JWT_SECRET=!JWT_SECRET!
-    echo FRONTEND_ORIGIN=!FRONTEND_ORIGIN!
-    echo.
-    echo # Initial Admin User (for first run)
-    echo ADMIN_EMAIL=!ADMIN_EMAIL!
-    echo ADMIN_PASSWORD=!ADMIN_PASSWORD!
-    echo.
-    echo # File System
-    echo FILES_ROOT=!FILES_ROOT!
-) > %ENV_FILE%
-
-echo Successfully wrote configuration to %ENV_FILE%
-echo.
-
-:: --- Frontend Env File ---
-set FRONTEND_ENV_FILE=frontend\.env
-echo.
-echo Creating frontend environment file at %FRONTEND_ENV_FILE%...
 if not exist frontend mkdir frontend
-(
-    echo VITE_API_URL=http://localhost:4000
-) > %FRONTEND_ENV_FILE%
-echo Successfully wrote configuration to %FRONTEND_ENV_FILE%
+(   echo # Backend Config > backend\.env
+    echo PORT=4000 >> backend\.env
+    echo NODE_ENV=development >> backend\.env
+    echo. >> backend\.env
+    echo # Database >> backend\.env
+    echo !DB_CONFIG_LINE! >> backend\.env
+    echo. >> backend\.env
+    echo # Security >> backend\.env
+    echo JWT_SECRET=!JWT_SECRET! >> backend\.env
+    echo FRONTEND_ORIGIN=!FRONTEND_ORIGIN! >> backend\.env
+    echo. >> backend\.env
+    echo # Initial Admin User >> backend\.env
+    echo ADMIN_EMAIL=!ADMIN_EMAIL! >> backend\.env
+    echo ADMIN_PASSWORD=!ADMIN_PASSWORD! >> backend\.env
+    echo. >> backend\.env
+    echo # File System >> backend\.env
+    echo FILES_ROOT=!FILES_ROOT! >> backend\.env
+) && ( echo VITE_API_URL=http://localhost:4000 > frontend\.env ) && echo Environment files created successfully.
 echo.
 
-echo --- Installation Complete! ---
+:: --- Installation ---
+echo --- Installing Dependencies ---
+echo This may take a few minutes...
 echo.
-echo Next Steps:
-ECHO 1. Install dependencies for both frontend and backend:
-ECHO    npm install --prefix backend
-ECHO    npm install --prefix frontend
-ECHO.
-ECHO 2. Start the development servers:
-ECHO    (In one terminal)
-ECHO    npm run dev --prefix backend
-ECHO.
-ECHO    (In another terminal)
-ECHO    npm run dev --prefix frontend
-echo.
+echo [1/3] Installing backend dependencies...
+call npm install --prefix backend --no-audit --fund false
+if %errorlevel% neq 0 ( call :print_error "Failed to install backend dependencies." && exit /b )
 
+echo [2/3] Installing frontend dependencies...
+call npm install --prefix frontend --no-audit --fund false
+if %errorlevel% neq 0 ( call :print_error "Failed to install frontend dependencies." && exit /b )
+
+echo [3/3] Setting up database...
+pushd backend
+call npm run db:migrate
+if %errorlevel% neq 0 ( popd && call :print_error "Failed to run database migrations. If using PostgreSQL, ensure the database server is running and accessible." && exit /b )
+popd
+
+
+:: --- Completion ---
+call :print_success "--- Installation Complete! ---"
+
+:start_choice
+echo Your development environment is ready.
+set /p START_NOW="Do you want to start the development servers now? (Y/n): "
+if /i "%START_NOW%"=="n" goto :end
+if /i "%START_NOW%"=="N" goto :end
+
+echo.
+echo Starting servers... Please close these new windows to stop the servers.
+start "Desi Panel Backend" cmd /c "npm run dev --prefix backend"
+start "Desi Panel Frontend" cmd /c "npm run dev --prefix frontend"
+
+:end
+call :print_success "Setup finished. You can start the servers manually at any time."
 ENDLOCAL
