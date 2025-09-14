@@ -76,8 +76,13 @@ const start = async () => {
   }
 };
 
-start();
+// Start the server only if this file is run directly
+if (require.main === module) {
+  start();
+}
 
 process.on('unhandledRejection', (reason) => {
   console.error('Unhandled Rejection:', reason);
 });
+
+module.exports = { app, start };
